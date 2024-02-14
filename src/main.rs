@@ -1,26 +1,62 @@
+/*
+    TODO:
+    1. SPAWN BALL WHEN RUNNING STATE ENTERS
+    2. PAUSE EVERYTHING WHEN PAUSED
+    3. ADD WAY TO QUIT GAME
+    4. ADD WAY TO SAVE SCORES
+    5. COUNTDOWN WHEN PLAYER SCORES, RESPAWNS BALL
+    6. ADD MENU + SCORE + COUNTDOWN USER INTERFACE
+*/
+
 use bevy::{prelude::*, window::PrimaryWindow};
 use rand::random;
 
 const PADDLE_SPEED: f32 = 400.0;
+const PADDLE_WIDTH: f32 = 30.0;
+const PADDLE_HEIGHT: f32 = 180.0;
+const BALL_SIZE: f32 = 10.0;
+const BALL_SPEED_INCREASE_FACTOR: f32 = 1.25;
 
 fn main() {
     App::new()
         .add_plugins(DefaultPlugins)
+        .add_state::<GameState>()
         .insert_resource(ClearColor(Color::rgb(0.0, 0.0, 0.0)))
         .insert_resource(LastScored {player: 1.0})
+        .insert_resource(Scores {player1: 0, player2: 0})
         .add_startup_system(spawn_camera)
         .add_startup_system(spawn_paddles)
-        .add_startup_system(spawn_ball)
-        .add_system(move_ball)
-        .add_system(move_paddles)
-        .add_system(confine_paddle_movement.after(move_paddles))
-        .add_system(ball_bouncing)
+        .add_system(spawn_ball.in_schedule(OnEnter(GameState::Running)))
+        .add_systems(
+            (
+                move_ball, 
+                move_paddles,
+                confine_paddle_movement.after(move_paddles),
+                ball_bouncing,
+            ).in_set(OnUpdate(GameState::Running))
+        )
         .run();
+}
+
+#[derive(States, Debug, Clone, Copy, Eq, PartialEq, Hash, Default)]
+pub enum GameState {
+    Running,
+    Player1Scored,
+    Player2Scored,
+    Paused,
+    #[default]
+    Menu,
 }
 
 #[derive(Resource)]
 pub struct LastScored {
     player: f32,
+}
+
+#[derive(Resource)]
+pub struct Scores {
+    player1: u32,
+    player2: u32,
 }
 
 #[derive(Component)]
@@ -143,7 +179,7 @@ pub fn confine_paddle_movement(
 ) {
     let window = window_query.get_single().unwrap();
 
-    let half_paddle_size = 90.0;
+    let half_paddle_size = PADDLE_HEIGHT / 2.0;
     let y_min = 0.0 + half_paddle_size;
     let y_max = window.height() - half_paddle_size;
 
@@ -178,10 +214,14 @@ pub fn ball_bouncing(
     mut ball_query: Query<(&Transform, Entity, &mut Ball)>,
     window_query: Query<&Window, With<PrimaryWindow>>,
     mut commands: Commands,
+    paddle_query1: Query<&Transform, With<Paddle1>>,
+    paddle_query2: Query<&Transform, (With<Paddle2>, Without<Paddle1>)>,
+    mut scores: ResMut<Scores>,
+    mut last_scored: ResMut<LastScored>,
 ) {
     let window = window_query.get_single().unwrap();
 
-    let half_ball_size = 10.0;
+    let half_ball_size = BALL_SIZE / 2.0;
     let x_min = 0.0 + half_ball_size;
     let x_max = window.width() - half_ball_size;
     let y_min = 0.0 + half_ball_size;
@@ -192,19 +232,44 @@ pub fn ball_bouncing(
 
         if translation.x < x_min {
             println!("Player 2 Scored!");
+            scores.player2 += 1;
+            println!("Scores - Player 1: {} - Player 2: {}", scores.player1, scores.player2);
+            last_scored.player = 1.0;
             commands.entity(ball_entity).despawn();
         }
         if translation.x > x_max {
             println!("Player 1 Scored!");
+            scores.player1 += 1;
+            println!("Scores - Player 1: {} - Player 2: {}", scores.player1, scores.player2);
+            last_scored.player = -1.0;
             commands.entity(ball_entity).despawn();
         }
         if translation.y > y_max || translation.y < y_min {
             ball.direction.y *= -1.0;
         }
+
+        let half_paddle_width = PADDLE_WIDTH / 2.0;
+        let half_paddle_height = PADDLE_HEIGHT / 2.0;
+
+        // ball does not bounce off left paddle!!!!!
+
+        if let Ok(transform1) = paddle_query1.get_single() {
+            let translation1 = transform1.translation;
+            if (translation.x - half_ball_size <= translation1.x + half_paddle_width && translation.x - half_ball_size >= translation1.x - half_paddle_width)
+            && (translation.y + half_ball_size >= translation1.y - half_paddle_height && translation.y - half_ball_size <= translation1.y + half_paddle_height){
+                ball.direction.x *= -1.0;
+                ball.speed *= BALL_SPEED_INCREASE_FACTOR;
+            }
+        }
+        if let Ok(transform2) = paddle_query2.get_single() {
+            let translation2 = transform2.translation;
+            if (translation.x + half_ball_size >= translation2.x - half_paddle_width && translation.x + half_ball_size <= translation2.x + half_paddle_width)
+            && (translation.y + half_ball_size >= translation2.y - half_paddle_height && translation.y - half_ball_size <= translation2.y + half_paddle_height){
+                ball.direction.x *= -1.0;
+                ball.speed *= BALL_SPEED_INCREASE_FACTOR;
+            }
+        }
     }
-
-    // add ball bouncing off paddles
-
     /*
     when player scores, depawn ball, put text on screen player scored, countdown, ball spawns again. 
      */
