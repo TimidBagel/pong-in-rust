@@ -26,7 +26,7 @@ fn main() {
         .insert_resource(Scores {player1: 0, player2: 0})
         .add_startup_system(spawn_camera)
         .add_startup_system(spawn_paddles)
-        .add_system(spawn_ball.in_schedule(OnEnter(GameState::Running)))
+        .add_system(spawn_ball.in_schedule(OnEnter(GameState::Running)).before(ball_bouncing))
         .add_systems(
             (
                 move_ball, 
@@ -36,6 +36,7 @@ fn main() {
             ).in_set(OnUpdate(GameState::Running))
         )
         .add_system(countdown.in_schedule(OnEnter(GameState::Scored)))
+        .add_system(execute_that_silly_little_ball)
         .run();
 }
 
@@ -58,6 +59,9 @@ pub struct Scores {
     player1: u32,
     player2: u32,
 }
+
+#[derive(Component)]
+pub struct ScheduledForExecution {}
 
 #[derive(Component)]
 pub struct Paddle1 {}
@@ -224,7 +228,7 @@ pub fn confine_paddle_movement(
 }
 
 pub fn ball_bouncing(
-    mut ball_query: Query<(&Transform, Entity, &mut Ball)>,
+    mut ball_query: Query<(&mut Transform, Entity, &mut Ball), (Without<ScheduledForExecution>, Without<Paddle1>, Without<Paddle2>)>,
     window_query: Query<&Window, With<PrimaryWindow>>,
     mut commands: Commands,
     paddle_query1: Query<&Transform, With<Paddle1>>,
@@ -241,23 +245,25 @@ pub fn ball_bouncing(
     let y_min = 0.0 + half_ball_size;
     let y_max = window.height() - half_ball_size;
 
-    if let Ok((transform, ball_entity, mut ball)) = ball_query.get_single_mut(){
+    if let Ok((mut transform, ball_entity, mut ball)) = ball_query.get_single_mut(){
         let translation = transform.translation;
 
         if translation.x < x_min {
+            transform.translation = Vec3::new(window.width() / 2.0, window.height() / 2.0, 0.0);
             println!("Player 2 Scored!");
             scores.player2 += 1;
             println!("Scores - Player 1: {} - Player 2: {}", scores.player1, scores.player2);
             last_scored.player = 1.0;
-            commands.entity(ball_entity).despawn();
+            commands.entity(ball_entity).insert(ScheduledForExecution{});
             game_state.set(GameState::Scored);
         }
         if translation.x > x_max {
+            transform.translation = Vec3::new(window.width() / 2.0, window.height() / 2.0, 0.0);
             println!("Player 1 Scored!");
             scores.player1 += 1;
             println!("Scores - Player 1: {} - Player 2: {}", scores.player1, scores.player2);
             last_scored.player = -1.0;
-            commands.entity(ball_entity).despawn();
+            commands.entity(ball_entity).insert(ScheduledForExecution{});
             game_state.set(GameState::Scored);
         }
         if translation.y > y_max || translation.y < y_min {
@@ -287,4 +293,13 @@ pub fn ball_bouncing(
     /*
     when player scores, despawn ball, put text on screen player scored, countdown, ball spawns again. 
      */
+}
+
+pub fn execute_that_silly_little_ball(
+    mut commands: Commands,
+    ball_query: Query<Entity, (With<Ball>, With<ScheduledForExecution>)>
+) {
+    if let Ok(ball_entity) = ball_query.get_single() {
+        commands.entity(ball_entity).despawn();
+    }
 }
