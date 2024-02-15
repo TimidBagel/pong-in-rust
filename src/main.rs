@@ -35,16 +35,16 @@ fn main() {
                 ball_bouncing,
             ).in_set(OnUpdate(GameState::Running))
         )
+        .add_system(countdown.in_schedule(OnEnter(GameState::Scored)))
         .run();
 }
 
 #[derive(States, Debug, Clone, Copy, Eq, PartialEq, Hash, Default)]
 pub enum GameState {
-    Running,
-    Player1Scored,
-    Player2Scored,
-    Paused,
     #[default]
+    Running,
+    Scored,
+    Paused,
     Menu,
 }
 
@@ -127,6 +127,19 @@ pub fn spawn_ball(
             speed: 200.0
         },
     ));
+}
+
+pub fn countdown(
+    time: Res<Time>,
+    mut game_state: ResMut<NextState<GameState>>,
+) {
+    let mut timer = 0.1;
+
+    while timer > 0.0 {
+        timer -= time.delta_seconds();
+    }
+
+    game_state.set(GameState::Running);
 }
 
 pub fn move_ball(
@@ -218,6 +231,7 @@ pub fn ball_bouncing(
     paddle_query2: Query<&Transform, (With<Paddle2>, Without<Paddle1>)>,
     mut scores: ResMut<Scores>,
     mut last_scored: ResMut<LastScored>,
+    mut game_state: ResMut<NextState<GameState>>,
 ) {
     let window = window_query.get_single().unwrap();
 
@@ -236,6 +250,7 @@ pub fn ball_bouncing(
             println!("Scores - Player 1: {} - Player 2: {}", scores.player1, scores.player2);
             last_scored.player = 1.0;
             commands.entity(ball_entity).despawn();
+            game_state.set(GameState::Scored);
         }
         if translation.x > x_max {
             println!("Player 1 Scored!");
@@ -243,6 +258,7 @@ pub fn ball_bouncing(
             println!("Scores - Player 1: {} - Player 2: {}", scores.player1, scores.player2);
             last_scored.player = -1.0;
             commands.entity(ball_entity).despawn();
+            game_state.set(GameState::Scored);
         }
         if translation.y > y_max || translation.y < y_min {
             ball.direction.y *= -1.0;
@@ -250,8 +266,6 @@ pub fn ball_bouncing(
 
         let half_paddle_width = PADDLE_WIDTH / 2.0;
         let half_paddle_height = PADDLE_HEIGHT / 2.0;
-
-        // ball does not bounce off left paddle!!!!!
 
         if let Ok(transform1) = paddle_query1.get_single() {
             let translation1 = transform1.translation;
@@ -271,6 +285,6 @@ pub fn ball_bouncing(
         }
     }
     /*
-    when player scores, depawn ball, put text on screen player scored, countdown, ball spawns again. 
+    when player scores, despawn ball, put text on screen player scored, countdown, ball spawns again. 
      */
 }
